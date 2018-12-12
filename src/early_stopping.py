@@ -1,12 +1,12 @@
-import tensorflow as tf
-import numpy as np
 import os
 import shutil
 
+import numpy as np
+import tensorflow as tf
 from tensorflow import keras
+from tensorflow.python.keras.datasets import mnist
 from tensorflow.python.keras.layers import Conv2D, MaxPooling2D, Dropout, Flatten, Dense
 from tensorflow.python.keras.models import Sequential
-from tensorflow.python.keras.datasets import mnist
 
 
 def build_keras_model(input_shape, num_classes):
@@ -38,10 +38,13 @@ def main():
     model_dir = 'experiments/'
     if os.path.exists(model_dir):
         shutil.rmtree(model_dir)
+
+    save_checkpoints_steps = 1000
+    max_checkpoint_without_decrease = 2
     config = tf.estimator.RunConfig(
-            save_checkpoints_steps=100,
+            save_checkpoints_steps=save_checkpoints_steps,
             save_summary_steps=100,
-            keep_checkpoint_max=5
+            keep_checkpoint_max=max_checkpoint_without_decrease + 2
     )
 
     estimator = keras.estimator.model_to_estimator(
@@ -49,6 +52,7 @@ def main():
         model_dir=model_dir,
         config=config
     )
+    print(estimator.eval_dir())
 
     (x_train, y_train), (x_test, y_test) = mnist.load_data()
     x_train = x_train[:1000, :, :]
@@ -62,21 +66,20 @@ def main():
     early_stopping = tf.contrib.estimator.stop_if_no_decrease_hook(
         estimator,
         metric_name='loss',
-        max_steps_without_decrease=1000,
-        min_steps=100)
+        max_steps_without_decrease=save_checkpoints_steps * max_checkpoint_without_decrease,
+        run_every_secs=None,
+        run_every_steps=save_checkpoints_steps,
+        min_steps=0)
     train_spec = tf.estimator.TrainSpec(
         tf.estimator.inputs.numpy_input_fn(x_train, y_train, shuffle=True, num_epochs=100, batch_size=10),
         hooks=[early_stopping]
     )
     eval_spec = tf.estimator.EvalSpec(
         tf.estimator.inputs.numpy_input_fn(x_test, y_test, shuffle=True, num_epochs=1),
-        name='my_evaluation',
-        steps=100,
-        start_delay_secs=10,
-        throttle_secs=10
+        steps=save_checkpoints_steps,
+        start_delay_secs=0,
+        throttle_secs=0
     )
-
-    os.makedirs(estimator.eval_dir())
 
     tf.estimator.train_and_evaluate(
         estimator,
